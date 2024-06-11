@@ -19,7 +19,8 @@ def scale_loss(loss,
                loss_id=0,
                model=None,
                delay_unscale=False,
-               delay_overflow_check=False):
+               delay_overflow_check=False,
+               last_partition=True):
     """
     On context manager entrance, creates ``scaled_loss = (loss.float())*current loss scale``.
     ``scaled_loss`` is yielded so that the user can call ``scaled_loss.backward()``::
@@ -110,7 +111,10 @@ def scale_loss(loss,
                 if not optimizer._amp_stash.params_have_scaled_gradients:
                     optimizer._prepare_amp_backward()
 
-    yield (loss.float())*loss_scale
+    if last_partition:
+        yield (loss.float())*loss_scale
+    else:
+        yield loss.float()
 
     if delay_unscale:
         for optimizer in optimizers:

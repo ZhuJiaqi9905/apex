@@ -205,6 +205,7 @@ class LossScaler(object):
                 self._loss_scale = max(self._min_loss_scale, self._loss_scale/2.)
             else:
                 self._loss_scale = self._loss_scale/2.
+            print(torch.distributed.get_rank(), ': update_scale(): _has_overflow, dynamic. _loss_scale = ', self._loss_scale)
             self._unskipped = 0
         else:
             should_skip = False

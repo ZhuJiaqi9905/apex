@@ -93,7 +93,7 @@ class FusedLAMB(torch.optim.Optimizer):
         else:
             super(FusedLAMB, self).zero_grad()
 
-    def step(self, closure=None):
+    def step(self, global_grad_norm=-1, closure=None):
         """Performs a single optimization step.
 
         Arguments:
@@ -104,36 +104,37 @@ class FusedLAMB(torch.optim.Optimizer):
         if closure is not None:
             loss = closure()
 
-        # create separate grad lists for fp32 and fp16 params
-        g_all_32, g_all_16 = [], []
-        for group in self.param_groups:
-            for p in group['params']:
-                if p.grad is None:
-                    continue
-                if p.dtype == torch.float32:
-                    g_all_32.append(p.grad.data)
-                elif p.dtype == torch.float16:
-                    g_all_16.append(p.grad.data)
-                else:
-                    raise RuntimeError('FusedLAMB only support fp16 and fp32.')
+        if global_grad_norm == -1:
+            # create separate grad lists for fp32 and fp16 params
+            g_all_32, g_all_16 = [], []
+            for group in self.param_groups:
+                for p in group['params']:
+                    if p.grad is None:
+                        continue
+                    if p.dtype == torch.float32:
+                        g_all_32.append(p.grad.data)
+                    elif p.dtype == torch.float16:
+                        g_all_16.append(p.grad.data)
+                    else:
+                        raise RuntimeError('FusedLAMB only support fp16 and fp32.')
 
-        device = self.param_groups[0]["params"][0].device
-        g_norm_32, g_norm_16 = torch.zeros(1, device=device), torch.zeros(1, device=device)
-        # compute grad norm for two lists
-        if len(g_all_32) > 0:
-            g_norm_32 = multi_tensor_applier(self.multi_tensor_l2norm,
-                                             self._dummy_overflow_buf,
-                                             [g_all_32], False)[0]
-        if len(g_all_16) > 0:
-            g_norm_16 = multi_tensor_applier(self.multi_tensor_l2norm,
-                                             self._dummy_overflow_buf,
-                                             [g_all_16], False)[0]
-
-        # blend two grad norms to get global grad norm
-        global_grad_norm = multi_tensor_applier(self.multi_tensor_l2norm,
+            device = self.param_groups[0]["params"][0].device
+            g_norm_32, g_norm_16 = torch.zeros(1, device=device), torch.zeros(1, device=device)
+            # compute grad norm for two lists
+            if len(g_all_32) > 0:
+                g_norm_32 = multi_tensor_applier(self.multi_tensor_l2norm,
                                                 self._dummy_overflow_buf,
-                                                [[g_norm_32, g_norm_16]],
-                                                False)[0]
+                                                [g_all_32], False)[0]
+            if len(g_all_16) > 0:
+                g_norm_16 = multi_tensor_applier(self.multi_tensor_l2norm,
+                                                self._dummy_overflow_buf,
+                                                [g_all_16], False)[0]
+
+            # blend two grad norms to get global grad norm
+            global_grad_norm = multi_tensor_applier(self.multi_tensor_l2norm,
+                                                    self._dummy_overflow_buf,
+                                                    [[g_norm_32, g_norm_16]],
+                                                    False)[0]
         max_grad_norm = self.defaults['max_grad_norm']
 
         for group in self.param_groups:

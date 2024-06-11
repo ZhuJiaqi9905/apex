@@ -351,10 +351,10 @@ def _process_optimizer(optimizer, properties):
             _master_params_to_model_params, optimizer)
 
         old_step = optimizer.step
-        def new_step(self, closure=None):
+        def new_step(self, global_grad_norm=-1, closure=None):
             if closure is not None:
                 raise RuntimeError("Currently, Amp does not support closure use with optimizers.")
-            retval = old_step()
+            retval = old_step(global_grad_norm=global_grad_norm)
             if not isinstance(self, FusedSGD):
                 self._master_params_to_model_params()
             # Clear the master grads that wouldn't be zeroed by model.zero_grad()
